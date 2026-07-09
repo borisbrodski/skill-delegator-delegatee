@@ -1,0 +1,22 @@
+# Configuration files with real credentials (except example)
+*.yaml
+*.yml
+!config.example.yaml
+
+# State and daemon tracking files
+*state.json
+delegation_daemons.json
+delegation_state.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Logs
+*.log
+
+# Task files (user-specific)
+tasks/*.md
+!tasks/.gitkeep

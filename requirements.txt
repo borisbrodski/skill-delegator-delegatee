@@ -1,0 +1,15 @@
+# Agent Delegation Skill Dependencies
+
+# Matrix client
+aiohttp>=3.8.0
+matrix-client>=0.4.0
+
+# Configuration
+pyyaml>=6.0
+
+# Logging (stdlib)
+# No additional dependencies needed
+
+# Testing (optional)
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0

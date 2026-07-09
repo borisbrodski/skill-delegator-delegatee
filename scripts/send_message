@@ -1,0 +1,12 @@
+#!/bin/bash
+# send_message - Send a message to delegator or delegatee
+# Usage: scripts/send_message --target <delegator|delegatee-name> --message "text"
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON:-python3}"
+
+$PYTHON "$SCRIPT_DIR/../src/delegation_core.py" send_message "$@"
+
+exit $?

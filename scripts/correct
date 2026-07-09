@@ -1,0 +1,24 @@
+#!/bin/bash
+# correct - Send a correction message to a delegatee
+# Usage: scripts/correct <delegatee-name> "<correction message>"
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON:-python3}"
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <delegatee-name> \"<correction message>\"" >&2
+    echo "Example: $0 coding-agent \"Focus on database migration first\"" >&2
+    exit 1
+fi
+
+DELEGATEE_NAME="$1"
+shift
+MESSAGE="$*"
+
+$PYTHON "$SCRIPT_DIR/../src/delegation_core.py" correct \
+    --delegatee "$DELEGATEE_NAME" \
+    --message "$MESSAGE"
+
+exit $?

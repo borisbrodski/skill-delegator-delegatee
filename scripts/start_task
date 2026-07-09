@@ -1,0 +1,64 @@
+#!/bin/bash
+# start_task - Start a new delegation task for a delegatee
+# Usage: scripts/start_task <delegatee-name> <task-file.md> [timeout-sec] [--no-reset-session]
+#
+# HU2/HU6: session reset is ON BY DEFAULT — a "/reset" is sent to the
+# delegatee's Matrix room before each new task, so the delegatee starts with a
+# fresh Hermes session (no cross-task context bloat → no mid-task compressions,
+# no T-number drift). Pass --no-reset-session to PRESERVE the session: use this
+# when the dispatch ANSWERS a question the delegatee asked, or continues an
+# interactive exchange where prior context must survive. Order-insensitive.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON:-python3}"
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <delegatee-name> <task-file.md> [timeout-sec] [--reset-session]" >&2
+    echo "Example: $0 coding-agent tasks/oauth2-auth.md 600" >&2
+    echo "Example: $0 coding-agent tasks/T39.md --reset-session" >&2
+    exit 1
+fi
+
+DELEGATEE_NAME="$1"
+TASK_FILE="$2"
+shift 2
+
+TIMEOUT_SEC=""
+RESET_SESSION_ARG=""
+
+# Parse remaining args: timeout (numeric), --reset-session (default), or
+# --no-reset-session (HU6 opt-out: preserve session when answering a question).
+for arg in "$@"; do
+    case "$arg" in
+        --reset-session)
+            RESET_SESSION_ARG="--reset-session"
+            ;;
+        --no-reset-session)
+            RESET_SESSION_ARG="--no-reset-session"
+            ;;
+        ''|*[!0-9]*)
+            echo "Error: unrecognized argument '$arg' (expected numeric timeout, --reset-session, or --no-reset-session)" >&2
+            exit 1
+            ;;
+        *)
+            TIMEOUT_SEC="$arg"
+            ;;
+    esac
+done
+
+# Validate task file exists
+if [ ! -f "$TASK_FILE" ]; then
+    echo "Error: Task file not found: $TASK_FILE" >&2
+    exit 1
+fi
+
+# Run Python script to handle the delegation (pass filename, not content)
+$PYTHON "$SCRIPT_DIR/../src/delegation_core.py" start_task \
+    --delegatee "$DELEGATEE_NAME" \
+    --task-file-path "$TASK_FILE" \
+    ${TIMEOUT_SEC:+--timeout $TIMEOUT_SEC} \
+    ${RESET_SESSION_ARG}
+
+exit $?

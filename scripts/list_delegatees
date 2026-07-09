@@ -1,0 +1,12 @@
+#!/bin/bash
+# list_delegatees - List all configured delegatees with status
+# Usage: scripts/list_delegatees
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON:-python3}"
+
+$PYTHON "$SCRIPT_DIR/../src/delegation_core.py" list_delegatees
+
+exit $?

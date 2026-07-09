@@ -1,0 +1,21 @@
+#!/bin/bash
+# ping - Send continue prompt to a stuck delegatee
+# Usage: scripts/ping <delegatee-name>
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON:-python3}"
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <delegatee-name>" >&2
+    echo "Example: $0 coding-agent" >&2
+    exit 1
+fi
+
+DELEGATEE_NAME="$1"
+
+$PYTHON "$SCRIPT_DIR/../src/delegation_core.py" ping \
+    --delegatee "$DELEGATEE_NAME"
+
+exit $?

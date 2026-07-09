@@ -1,0 +1,38 @@
+---
+# Agent Delegation Configuration
+# Copy this file to delegator-delegatee.yaml and fill in your values
+# NOTE: matrix.url should NOT have a trailing slash (e.g., https://matrix.example.com)
+
+# Delegator's Matrix credentials (used to send messages to delegatees)
+matrix:
+  url: https://matrix.example.com
+  user_id: @orchestrator:example.com
+  access_token: YOUR_ACCESS_TOKEN_HERE
+
+delegator:
+  name: orchestrator-agent
+  type: Hermes
+  profile: my-profile
+  matrix:
+    room_id: "!orchestrator-room:example.com"
+
+timeouts:
+  poll_interval_sec: 15              # Check for === NO_MORE_ACTIONS === every N seconds
+  progress_report_interval_sec: 900  # Send periodic progress report every N seconds (15 min)
+
+delegatees:
+  - name: coding-agent
+    description: "Code implementation and refactoring"
+    type: Hermes
+    profile: my-profile
+    matrix:
+      room_id: "!coding-room:example.com"
+
+  - name: testing-agent
+    description: "Test suite generation and QA"
+    type: Hermes
+    profile: my-profile
+    matrix:
+      room_id: "!testing-room:example.com"
+
+log_level: info
