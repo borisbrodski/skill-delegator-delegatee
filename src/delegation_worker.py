@@ -253,8 +253,8 @@ class DelegationWorker:
                     )
                     return "IDLING" in result.stdout.upper()
                 except Exception:
-                    return True
-            return True
+                    return False  # fail-safe: assume BUSY when idle check errors
+            return False  # fail-safe: assume BUSY when idle script missing
 
         # Hermes — read the delegatee's profile gateway_state.json
         profile = delegatee_cfg.get('profile')
@@ -264,7 +264,7 @@ class DelegationWorker:
                 state = json.load(f)
                 return state.get('active_agents', 0) == 0
         except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
-            return True  # Default-idle when state unreadable
+            return False  # fail-safe: assume BUSY when state unreadable (never nudge on uncertainty)
 
     # ------------------------------------------------------------------
     # Pause / resume support
@@ -934,6 +934,14 @@ class DelegationWorker:
     # counter like ``iteration 5/200`` that increments on each tick. When the
     # delegatee is using a subagent (which has no chat-room presence), this is
     # the *only* signal of progress, so we MUST count it as activity.
+    # Substrings Hermes prints while a model request is genuinely in flight
+    # (slow prefill / long generation). Their presence = working, not wedged.
+    _INFLIGHT_MARKERS = (
+        'waiting for stream response',
+        'no chunks yet',
+        'receiving stream response',
+    )
+
     _HERMES_STUCK_PREFIXES = (
         '⏳ Retrying',
         '⏳ Waiting',
@@ -968,6 +976,12 @@ class DelegationWorker:
         b = body.strip()
         if b.startswith('* '):
             b = b[2:].lstrip()
+        # In-flight-request markers PROVE the model is actively working (a long
+        # prefill / generation) even with no tool output. Treat as liveness so a
+        # slow turn is never mistaken for a fallen-out loop.
+        for marker in cls._INFLIGHT_MARKERS:
+            if marker in b:
+                return True
         for prefix in cls._HERMES_STUCK_PREFIXES:
             if b.startswith(prefix):
                 return False
@@ -1199,7 +1213,8 @@ The delegation has been stopped. Delegatee has been notified."""
         if not self.state:
             raise ValueError(f"No active delegation for {self.delegatee_name}")
             
-        continue_message = "Continue with the task. If finished or delegator action is required, answer with summary adding `=== NO_MORE_ACTIONS ===` (exact wording!)."""
+        # `/steer` so a ping never interrupts a working agent.
+        continue_message = "/steer Continue with the task. If finished or delegator action is required, answer with summary adding `=== NO_MORE_ACTIONS ===` (exact wording!)."""
         
         await self.client.send_message(self.state.delegatee_room_id, continue_message)
         self.logger.info(f"Ping sent to {self.delegatee_name}")
@@ -1267,7 +1282,8 @@ Messages collected: {len(messages)}
 {msg_list}
 
 ---
-*Task still in progress. Delegator can ping, correct, or stop.*"""
+*Task still in progress — this is a STATUS UPDATE, not a request to work.*
+**Make a direct decision now. Do NOT open a tool loop or investigate the task yourself — you and the delegatee must never work in parallel.** Your only moves: **ping** (nudge it), **correct** (redirect it), **wait** (reply one short line, no tool calls), or — as a LAST RESORT — **stop**. Investigate, verify, and redelegate/report only after the delegatee is **done** (or if you feel forced to `stop`)."""
         else:
             # No new activity — alert the delegator that the delegatee appears stuck
             summary = f"""⚠️ **NO ACTIVITY — Delegatee appears stuck: {self.delegatee_name}**
@@ -1278,11 +1294,11 @@ No new messages since last report.
 The delegatee has not produced any output in the last 15 minutes.
 This may mean the delegatee is stuck, waiting for input, or the task is complete but `=== NO_MORE_ACTIONS ===` was not sent.
 
-**Options:**
+**Make a direct decision now — do NOT open a tool loop or investigate the task yourself while the delegatee is running. Pick one:**
 - **Ping** the delegatee to prompt it to continue
 - **Correct** the delegatee with additional instructions
-- **Stop** the delegation and handle manually
-- **Wait** — some tasks take a long time"""
+- **Wait** — reply with one short text line, no tool calls (some tasks take a long time)
+- **Stop** — LAST RESORT only. Investigate results + redelegate/report after the delegatee is done, or after you are forced to stop."""
 
         return self._truncate_to_bytes(summary, self.state.max_update_bytes * 3)  # Allow more for periodic reports
 
@@ -1340,10 +1356,20 @@ This may mean the delegatee is stuck, waiting for input, or the task is complete
         #
         # IDLE_PING_THRESHOLD: longer (12 min) — past one Hermes heartbeat
         # tick so a single missed heartbeat alone won't trigger a false ping.
-        FALL_OUT_THRESHOLD = 300.0    # 5 minutes — quick "did the delegatee die?" signal
-        IDLE_PING_THRESHOLD = 720.0   # 12 minutes — past one Hermes heartbeat tick
-        IDLE_PING_DEBOUNCE = 300.0    # don't ping more than once every 5 min
-        IDLE_PING_MAX = 3             # up to 3 pings then escalate-and-stop
+        # Target EXACTLY ONE condition: the delegatee fell out of its tool-call
+        # loop and is doing nothing. Do NOT try to detect "slow" — a slow model
+        # (multi-minute uncached prefill) is still working. Instead of magic
+        # timeouts, CALCULATE patience from Hermes's own liveness heartbeat
+        # (the "⏳ Working (N min…)" tick + tool calls + stream-wait all count as
+        # activity). A fall-out is real only after MULTIPLE missed heartbeat
+        # cycles. Override the cadence via config timeouts.hermes_heartbeat_sec.
+        HERMES_HEARTBEAT_SEC = float(
+            self.config.get('timeouts', {}).get('hermes_heartbeat_sec', 600.0)
+        )
+        FALL_OUT_THRESHOLD = 2.0 * HERMES_HEARTBEAT_SEC   # 2 missed ticks — notify only
+        IDLE_PING_THRESHOLD = 2.0 * HERMES_HEARTBEAT_SEC  # 2 missed ticks — nudge the loop
+        IDLE_PING_DEBOUNCE = HERMES_HEARTBEAT_SEC         # re-nudge no faster than one tick
+        IDLE_PING_MAX = 3             # up to 3 nudges, then alert the delegator (never auto-kill a busy agent)
 
         while self.running and self.state and self.state.polling_active:
             iteration += 1
@@ -1389,8 +1415,9 @@ This may mean the delegatee is stuck, waiting for input, or the task is complete
                                 f"skipping (model is working)."
                             )
                         else:
+                            # `/steer` so the nudge NEVER interrupts a working agent.
                             ping_text = (
-                                "Continue with the task. If finished or delegator "
+                                "/steer Continue with the task. If finished or delegator "
                                 "action is required, answer with summary adding "
                                 "`=== NO_MORE_ACTIONS ===` (exact wording!)."
                             )
@@ -1420,7 +1447,7 @@ This may mean the delegatee is stuck, waiting for input, or the task is complete
                                 and self.state.idle_ping_count < IDLE_PING_MAX
                                 and debounce_ok):
                             ping_text = (
-                                "Are you still working? You've been silent for "
+                                "/steer Are you still working? You've been silent for "
                                 f"~{int(silence)}s. If you're stuck, summarise where you are; "
                                 "if you're done, write `=== NO_MORE_ACTIONS ===` exactly. "
                                 "Otherwise emit your next tool call now."
