@@ -6,7 +6,7 @@
 # Delegator's Matrix credentials (used to send messages to delegatees)
 matrix:
   url: https://matrix.example.com
-  user_id: @orchestrator:example.com
+  user_id: "@orchestrator:example.com"
   access_token: YOUR_ACCESS_TOKEN_HERE
 
 delegator:

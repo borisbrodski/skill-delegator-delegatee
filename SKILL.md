@@ -47,6 +47,8 @@ All commands live in `{baseDir}/scripts/`.
 ```
 Stops any existing daemon, starts fresh, sends the task, activates background polling. Verifies daemon survived startup.
 
+> **`<delegatee-name>` is the name from _your_ config's `delegatees:` list** — run `{baseDir}/scripts/list_delegatees` to see the exact names. Do **not** copy names from the example config (`coding-agent`, `testing-agent`) or the docs; those are illustrative and a `start_task` against them fails with "unknown delegatee", wasting a round-trip.
+
 Session reset is **ON BY DEFAULT** — every new task sends `/reset` first for a clean context. Pass `--no-reset-session` to preserve session when answering a delegatee's question or continuing an interactive exchange.
 
 ### correct
